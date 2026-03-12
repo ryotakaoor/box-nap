@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Box Nap - Reset</title>
+    <style>
+        body {
+            background-color: #0a0a0a;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            overflow: hidden;
+        }
+        #timer {
+            font-size: 80px;
+            font-weight: 200;
+            letter-spacing: 5px;
+            margin-bottom: 20px;
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 85%;
+            max-width: 320px;
+        }
+        .row {
+            display: flex;
+            gap: 8px;
+        }
+        button {
+            background: transparent;
+            border: 1px solid #333;
+            color: #666;
+            padding: 12px;
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: 0.3s;
+            flex: 1;
+        }
+        button.active {
+            border-color: #fff;
+            color: #fff;
+            background: rgba(255,255,255,0.05);
+        }
+        #startBtn {
+            background: #fff;
+            color: #000;
+            border: none;
+            margin-top: 10px;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        #testBtn {
+            border: 1px solid #d32f2f;
+            color: #d32f2f;
+            font-size: 12px;
+            margin-top: 20px;
+        }
+        .status-msg {
+            margin-top: 20px;
+            color: #444;
+            font-size: 12px;
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="timer">15:00</div>
+
+    <div class="controls">
+        <div class="row">
+            <button class="time-btn" data-time="300">5分</button>
+            <button class="time-btn" data-time="600">10分</button>
+            <button class="time-btn active" data-time="900">15分</button>
+            <button class="time-btn" data-time="1200">20分</button>
+        </div>
+        <div class="row">
+            <button id="sharpBtn" class="active">スッキリ</button>
+            <button id="gentleBtn">ゆったり</button>
+        </div>
+        <button id="startBtn">意識をOFFにする</button>
+        <button id="testBtn">動作確認（5秒後に終了）</button>
+    </div>
+
+    <p class="status-msg">静寂の中で、ギアを整える</p>
+
+    <script>
+        let timeLeft = 900;
+        let timerId = null;
+        let alarmType = 'sharp';
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(freq, type, duration) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        const display = document.getElementById('timer');
+        const startBtn = document.getElementById('startBtn');
+        const testBtn = document.getElementById('testBtn');
+        
+        // 時間選択
+        document.querySelectorAll('.time-btn').forEach(btn => {
+            btn.onclick = () => {
+                document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                timeLeft = parseInt(btn.dataset.time);
+                updateDisplay();
+            };
+        });
+
+        function updateDisplay() {
+            let mins = Math.floor(timeLeft / 60);
+            let secs = timeLeft % 60;
+            display.innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        }
+
+        // アラーム選択
+        const sharpBtn = document.getElementById('sharpBtn');
+        const gentleBtn = document.getElementById('gentleBtn');
+        sharpBtn.onclick = () => { alarmType = 'sharp'; sharpBtn.classList.add('active'); gentleBtn.classList.remove('active'); };
+        gentleBtn.onclick = () => { alarmType = 'gentle'; gentleBtn.classList.add('active'); sharpBtn.classList.remove('active'); };
+
+        startBtn.onclick = () => toggleTimer(false);
+        testBtn.onclick = () => { timeLeft = 5; updateDisplay(); toggleTimer(true); };
+
+        function toggleTimer(isTest) {
+            if (timerId) {
+                clearInterval(timerId);
+                timerId = null;
+                startBtn.innerText = "再開する";
+            } else {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                playSound(110, 'sine', 2);
+                startBtn.innerText = isTest ? "テスト中..." : "休息中...";
+                timerId = setInterval(() => {
+                    timeLeft--;
+                    updateDisplay();
+                    if (timeLeft <= 0) {
+                        clearInterval(timerId);
+                        timerId = null;
+                        finish();
+                    }
+                }, 1000);
+            }
+        }
+
+        function finish() {
+            if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+            if (alarmType === 'sharp') {
+                let i = 0;
+                let interval = setInterval(() => {
+                    playSound(880, 'triangle', 0.4);
+                    i++; if (i > 3) clearInterval(interval);
+                }, 500);
+            } else {
+                playSound(330, 'sine', 3);
+            }
+            setTimeout(() => { alert("リセット完了。"); startBtn.innerText = "意識をOFFにする"; }, 100);
+        }
+    </script>
+</body>
+</html>
