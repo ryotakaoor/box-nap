@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Box Nap - Reset</title>
+    <title>Box Nap</title>
     <style>
         body {
             background-color: #0a0a0a;
@@ -15,7 +15,7 @@
             height: 100vh;
             margin: 0;
             font-family: 'Helvetica Neue', Arial, sans-serif;
-            overflow: hidden;
+            transition: background-color 1s; /* 背景変化をスムーズに */
         }
         #timer {
             font-size: 80px;
@@ -30,10 +30,7 @@
             width: 85%;
             max-width: 320px;
         }
-        .row {
-            display: flex;
-            gap: 8px;
-        }
+        .row { display: flex; gap: 8px; }
         button {
             background: transparent;
             border: 1px solid #333;
@@ -42,34 +39,12 @@
             font-size: 14px;
             cursor: pointer;
             border-radius: 8px;
-            transition: 0.3s;
             flex: 1;
         }
-        button.active {
-            border-color: #fff;
-            color: #fff;
-            background: rgba(255,255,255,0.05);
-        }
-        #startBtn {
-            background: #fff;
-            color: #000;
-            border: none;
-            margin-top: 10px;
-            font-weight: bold;
-            font-size: 16px;
-        }
-        #testBtn {
-            border: 1px solid #d32f2f;
-            color: #d32f2f;
-            font-size: 12px;
-            margin-top: 20px;
-        }
-        .status-msg {
-            margin-top: 20px;
-            color: #444;
-            font-size: 12px;
-            letter-spacing: 1px;
-        }
+        button.active { border-color: #fff; color: #fff; background: rgba(255,255,255,0.05); }
+        #startBtn { background: #fff; color: #000; border: none; margin-top: 10px; font-weight: bold; font-size: 16px; }
+        #testBtn { border: 1px solid #d32f2f; color: #d32f2f; font-size: 12px; margin-top: 20px; }
+        .status-msg { margin-top: 20px; color: #444; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -88,23 +63,30 @@
             <button id="gentleBtn">ゆったり</button>
         </div>
         <button id="startBtn">意識をOFFにする</button>
-        <button id="testBtn">動作確認（5秒後に終了）</button>
+        <button id="testBtn">動作テスト（5秒）</button>
     </div>
-
-    <p class="status-msg">静寂の中で、ギアを整える</p>
 
     <script>
         let timeLeft = 900;
         let timerId = null;
         let alarmType = 'sharp';
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let audioCtx = null;
 
-        function playSound(freq, type, duration) {
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playSound(freq, type, duration, vol = 0.2) {
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.type = type;
             osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
             osc.connect(gain);
             gain.connect(audioCtx.destination);
@@ -116,7 +98,6 @@
         const startBtn = document.getElementById('startBtn');
         const testBtn = document.getElementById('testBtn');
         
-        // 時間選択
         document.querySelectorAll('.time-btn').forEach(btn => {
             btn.onclick = () => {
                 document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
@@ -132,14 +113,13 @@
             display.innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
         }
 
-        // アラーム選択
         const sharpBtn = document.getElementById('sharpBtn');
         const gentleBtn = document.getElementById('gentleBtn');
         sharpBtn.onclick = () => { alarmType = 'sharp'; sharpBtn.classList.add('active'); gentleBtn.classList.remove('active'); };
         gentleBtn.onclick = () => { alarmType = 'gentle'; gentleBtn.classList.add('active'); sharpBtn.classList.remove('active'); };
 
-        startBtn.onclick = () => toggleTimer(false);
-        testBtn.onclick = () => { timeLeft = 5; updateDisplay(); toggleTimer(true); };
+        startBtn.onclick = () => { initAudio(); toggleTimer(false); };
+        testBtn.onclick = () => { initAudio(); timeLeft = 5; updateDisplay(); toggleTimer(true); };
 
         function toggleTimer(isTest) {
             if (timerId) {
@@ -147,8 +127,8 @@
                 timerId = null;
                 startBtn.innerText = "再開する";
             } else {
-                if (audioCtx.state === 'suspended') audioCtx.resume();
-                playSound(110, 'sine', 2);
+                document.body.style.backgroundColor = "#0a0a0a"; // 背景を戻す
+                playSound(110, 'sine', 2, 0.1); // 開始音
                 startBtn.innerText = isTest ? "テスト中..." : "休息中...";
                 timerId = setInterval(() => {
                     timeLeft--;
@@ -163,17 +143,25 @@
         }
 
         function finish() {
-            if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+            // 背景色を変えて視覚的に通知
+            document.body.style.backgroundColor = "#1a1a2e";
+            
             if (alarmType === 'sharp') {
-                let i = 0;
-                let interval = setInterval(() => {
-                    playSound(880, 'triangle', 0.4);
-                    i++; if (i > 3) clearInterval(interval);
-                }, 500);
+                // スッキリ：高めの音を4回
+                for(let i=0; i<4; i++) {
+                    setTimeout(() => playSound(880, 'triangle', 0.5, 0.3), i * 600);
+                }
             } else {
-                playSound(330, 'sine', 3);
+                // ゆったり：低い音を長く
+                playSound(330, 'sine', 4, 0.3);
             }
-            setTimeout(() => { alert("リセット完了。"); startBtn.innerText = "意識をOFFにする"; }, 100);
+            
+            // 音が鳴り終わる頃にアラートを出す（iOS対策）
+            setTimeout(() => {
+                alert("リセット完了。ギアを上げましょう。");
+                startBtn.innerText = "意識をOFFにする";
+                document.body.style.backgroundColor = "#0a0a0a";
+            }, 2500);
         }
     </script>
 </body>
