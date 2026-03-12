@@ -15,7 +15,7 @@
             height: 100vh;
             margin: 0;
             font-family: 'Helvetica Neue', Arial, sans-serif;
-            transition: background-color 1s; /* 背景変化をスムーズに */
+            transition: background-color 0.5s;
         }
         #timer {
             font-size: 80px;
@@ -42,9 +42,19 @@
             flex: 1;
         }
         button.active { border-color: #fff; color: #fff; background: rgba(255,255,255,0.05); }
-        #startBtn { background: #fff; color: #000; border: none; margin-top: 10px; font-weight: bold; font-size: 16px; }
-        #testBtn { border: 1px solid #d32f2f; color: #d32f2f; font-size: 12px; margin-top: 20px; }
-        .status-msg { margin-top: 20px; color: #444; font-size: 12px; }
+        #startBtn { background: #fff; color: #000; border: none; margin-top: 10px; font-weight: bold; font-size: 16px; transition: 0.3s; }
+        /* アラーム鳴動中のボタン色 */
+        #startBtn.alarm-active {
+            background: #d32f2f;
+            color: #fff;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        #testBtn { border: 1px solid #444; color: #444; font-size: 12px; margin-top: 20px; }
     </style>
 </head>
 <body>
@@ -69,8 +79,10 @@
     <script>
         let timeLeft = 900;
         let timerId = null;
+        let alarmIntervalId = null;
         let alarmType = 'sharp';
         let audioCtx = null;
+        let isAlarming = false;
 
         function initAudio() {
             if (!audioCtx) {
@@ -100,6 +112,7 @@
         
         document.querySelectorAll('.time-btn').forEach(btn => {
             btn.onclick = () => {
+                if (isAlarming) return;
                 document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 timeLeft = parseInt(btn.dataset.time);
@@ -118,8 +131,22 @@
         sharpBtn.onclick = () => { alarmType = 'sharp'; sharpBtn.classList.add('active'); gentleBtn.classList.remove('active'); };
         gentleBtn.onclick = () => { alarmType = 'gentle'; gentleBtn.classList.add('active'); sharpBtn.classList.remove('active'); };
 
-        startBtn.onclick = () => { initAudio(); toggleTimer(false); };
-        testBtn.onclick = () => { initAudio(); timeLeft = 5; updateDisplay(); toggleTimer(true); };
+        startBtn.onclick = () => {
+            initAudio();
+            if (isAlarming) {
+                stopAlarm();
+            } else {
+                toggleTimer(false);
+            }
+        };
+
+        testBtn.onclick = () => {
+            if (isAlarming) return;
+            initAudio();
+            timeLeft = 5;
+            updateDisplay();
+            toggleTimer(true);
+        };
 
         function toggleTimer(isTest) {
             if (timerId) {
@@ -127,8 +154,8 @@
                 timerId = null;
                 startBtn.innerText = "再開する";
             } else {
-                document.body.style.backgroundColor = "#0a0a0a"; // 背景を戻す
-                playSound(110, 'sine', 2, 0.1); // 開始音
+                document.body.style.backgroundColor = "#0a0a0a";
+                playSound(110, 'sine', 2, 0.1); 
                 startBtn.innerText = isTest ? "テスト中..." : "休息中...";
                 timerId = setInterval(() => {
                     timeLeft--;
@@ -136,32 +163,38 @@
                     if (timeLeft <= 0) {
                         clearInterval(timerId);
                         timerId = null;
-                        finish();
+                        startAlarm();
                     }
                 }, 1000);
             }
         }
 
-        function finish() {
-            // 背景色を変えて視覚的に通知
+        function startAlarm() {
+            isAlarming = true;
+            startBtn.innerText = "アラームを止める";
+            startBtn.classList.add('alarm-active');
             document.body.style.backgroundColor = "#1a1a2e";
-            
-            if (alarmType === 'sharp') {
-                // スッキリ：高めの音を4回
-                for(let i=0; i<4; i++) {
-                    setTimeout(() => playSound(880, 'triangle', 0.5, 0.3), i * 600);
+
+            // 音のループ開始
+            alarmIntervalId = setInterval(() => {
+                if (alarmType === 'sharp') {
+                    playSound(880, 'triangle', 0.5, 0.3);
+                } else {
+                    playSound(330, 'sine', 1.5, 0.3);
                 }
-            } else {
-                // ゆったり：低い音を長く
-                playSound(330, 'sine', 4, 0.3);
-            }
-            
-            // 音が鳴り終わる頃にアラートを出す（iOS対策）
-            setTimeout(() => {
-                alert("リセット完了。ギアを上げましょう。");
-                startBtn.innerText = "意識をOFFにする";
-                document.body.style.backgroundColor = "#0a0a0a";
-            }, 2500);
+            }, alarmType === 'sharp' ? 800 : 2000);
+        }
+
+        function stopAlarm() {
+            isAlarming = false;
+            clearInterval(alarmIntervalId);
+            startBtn.innerText = "意識をOFFにする";
+            startBtn.classList.remove('alarm-active');
+            document.body.style.backgroundColor = "#0a0a0a";
+            // 時間を元の設定（選択されているボタンの時間）に戻す
+            const activeTime = document.querySelector('.time-btn.active').dataset.time;
+            timeLeft = parseInt(activeTime);
+            updateDisplay();
         }
     </script>
 </body>
