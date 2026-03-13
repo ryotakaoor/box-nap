@@ -12,49 +12,28 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
             font-family: 'Helvetica Neue', Arial, sans-serif;
             transition: background-color 0.5s;
         }
-        #timer {
-            font-size: 80px;
-            font-weight: 200;
-            letter-spacing: 5px;
-            margin-bottom: 20px;
-        }
-        .controls {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            width: 85%;
-            max-width: 320px;
-        }
+        #timer { font-size: 80px; font-weight: 200; letter-spacing: 5px; margin-bottom: 20px; }
+        .controls { display: flex; flex-direction: column; gap: 12px; width: 85%; max-width: 320px; z-index: 10; }
         .row { display: flex; gap: 8px; }
-        button {
-            background: transparent;
-            border: 1px solid #333;
-            color: #666;
-            padding: 12px;
-            font-size: 14px;
-            cursor: pointer;
-            border-radius: 8px;
-            flex: 1;
-        }
+        button { background: transparent; border: 1px solid #333; color: #666; padding: 12px; font-size: 14px; cursor: pointer; border-radius: 8px; flex: 1; transition: 0.3s; }
         button.active { border-color: #fff; color: #fff; background: rgba(255,255,255,0.05); }
-        #startBtn { background: #fff; color: #000; border: none; margin-top: 10px; font-weight: bold; font-size: 16px; transition: 0.3s; }
-        /* アラーム鳴動中のボタン色 */
-        #startBtn.alarm-active {
-            background: #d32f2f;
-            color: #fff;
-            animation: pulse 1s infinite;
-        }
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); }
-        }
-        #testBtn { border: 1px solid #444; color: #444; font-size: 12px; margin-top: 20px; }
+        #startBtn { background: #fff; color: #000; border: none; margin-top: 10px; font-weight: bold; font-size: 16px; }
+        #startBtn.alarm-active { background: #d32f2f; color: #fff; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        
+        /* 評価エリア */
+        #ratingArea { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); flex-direction: column; align-items: center; justify-content: center; z-index: 100; }
+        #ratingArea h3 { margin-bottom: 30px; font-weight: 300; }
+        
+        /* 履歴エリア */
+        #historyArea { width: 85%; max-width: 320px; margin-top: 50px; border-top: 1px solid #222; padding-top: 20px; }
+        #historyArea h4 { font-size: 12px; color: #444; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 15px; }
+        .log-item { display: flex; justify-content: space-between; font-size: 12px; color: #888; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #111; }
     </style>
 </head>
 <body>
@@ -73,7 +52,20 @@
             <button id="gentleBtn">ゆったり</button>
         </div>
         <button id="startBtn">意識をOFFにする</button>
-        <button id="testBtn">動作テスト（5秒）</button>
+    </div>
+
+    <div id="historyArea">
+        <h4>LOGS</h4>
+        <div id="historyList"></div>
+    </div>
+
+    <div id="ratingArea">
+        <h3>コンディションはどう？</h3>
+        <div class="row" style="width: 80%;">
+            <button onclick="saveLog('😊 最高')">😊 最高</button>
+            <button onclick="saveLog('😐 普通')">😐 普通</button>
+            <button onclick="saveLog('😴 まだ眠い')">😴 まだ眠い</button>
+        </div>
     </div>
 
     <script>
@@ -83,13 +75,21 @@
         let alarmType = 'sharp';
         let audioCtx = null;
         let isAlarming = false;
+        let wakeLock = null;
 
-        function initAudio() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
+        const display = document.getElementById('timer');
+        const startBtn = document.getElementById('startBtn');
+        const ratingArea = document.getElementById('ratingArea');
+        const historyList = document.getElementById('historyList');
+
+        // 音声・画面維持の初期化
+        async function initSystems() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            // 画面が消えるのを防ぐ（サポートされているブラウザのみ）
+            if ('wakeLock' in navigator) {
+                try { wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
             }
         }
 
@@ -106,10 +106,7 @@
             osc.stop(audioCtx.currentTime + duration);
         }
 
-        const display = document.getElementById('timer');
-        const startBtn = document.getElementById('startBtn');
-        const testBtn = document.getElementById('testBtn');
-        
+        // 時間選択
         document.querySelectorAll('.time-btn').forEach(btn => {
             btn.onclick = () => {
                 if (isAlarming) return;
@@ -126,29 +123,17 @@
             display.innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
         }
 
-        const sharpBtn = document.getElementById('sharpBtn');
-        const gentleBtn = document.getElementById('gentleBtn');
-        sharpBtn.onclick = () => { alarmType = 'sharp'; sharpBtn.classList.add('active'); gentleBtn.classList.remove('active'); };
-        gentleBtn.onclick = () => { alarmType = 'gentle'; gentleBtn.classList.add('active'); sharpBtn.classList.remove('active'); };
+        // アラームタイプ
+        document.getElementById('sharpBtn').onclick = function() { alarmType = 'sharp'; this.classList.add('active'); document.getElementById('gentleBtn').classList.remove('active'); };
+        document.getElementById('gentleBtn').onclick = function() { alarmType = 'gentle'; this.classList.add('active'); document.getElementById('sharpBtn').classList.remove('active'); };
 
         startBtn.onclick = () => {
-            initAudio();
-            if (isAlarming) {
-                stopAlarm();
-            } else {
-                toggleTimer(false);
-            }
+            initSystems();
+            if (isAlarming) stopAlarm();
+            else toggleTimer();
         };
 
-        testBtn.onclick = () => {
-            if (isAlarming) return;
-            initAudio();
-            timeLeft = 5;
-            updateDisplay();
-            toggleTimer(true);
-        };
-
-        function toggleTimer(isTest) {
+        function toggleTimer() {
             if (timerId) {
                 clearInterval(timerId);
                 timerId = null;
@@ -156,7 +141,7 @@
             } else {
                 document.body.style.backgroundColor = "#0a0a0a";
                 playSound(110, 'sine', 2, 0.1); 
-                startBtn.innerText = isTest ? "テスト中..." : "休息中...";
+                startBtn.innerText = "休息中...";
                 timerId = setInterval(() => {
                     timeLeft--;
                     updateDisplay();
@@ -174,28 +159,50 @@
             startBtn.innerText = "アラームを止める";
             startBtn.classList.add('alarm-active');
             document.body.style.backgroundColor = "#1a1a2e";
-
-            // 音のループ開始
             alarmIntervalId = setInterval(() => {
-                if (alarmType === 'sharp') {
-                    playSound(880, 'triangle', 0.5, 0.3);
-                } else {
-                    playSound(330, 'sine', 1.5, 0.3);
-                }
+                if (alarmType === 'sharp') playSound(880, 'triangle', 0.5, 0.3);
+                else playSound(330, 'sine', 1.5, 0.3);
             }, alarmType === 'sharp' ? 800 : 2000);
         }
 
         function stopAlarm() {
             isAlarming = false;
             clearInterval(alarmIntervalId);
-            startBtn.innerText = "意識をOFFにする";
             startBtn.classList.remove('alarm-active');
-            document.body.style.backgroundColor = "#0a0a0a";
-            // 時間を元の設定（選択されているボタンの時間）に戻す
+            ratingArea.style.display = 'flex'; // 評価画面へ
+        }
+
+        // ログ保存
+        function saveLog(status) {
+            const now = new Date();
+            const timeStr = `${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${now.getMinutes().toString().padStart(2,'0')}`;
+            const log = { date: timeStr, status: status };
+            
+            let logs = JSON.parse(localStorage.getItem('napLogs') || '[]');
+            logs.unshift(log);
+            localStorage.setItem('napLogs', JSON.stringify(logs.slice(0, 5))); // 直近5件保存
+            
+            renderLogs();
+            ratingArea.style.display = 'none';
+            resetApp();
+        }
+
+        function renderLogs() {
+            const logs = JSON.parse(localStorage.getItem('napLogs') || '[]');
+            historyList.innerHTML = logs.map(l => `<div class="log-item"><span>${l.date}</span><span>${l.status}</span></div>`).join('');
+        }
+
+        function resetApp() {
             const activeTime = document.querySelector('.time-btn.active').dataset.time;
             timeLeft = parseInt(activeTime);
             updateDisplay();
+            startBtn.innerText = "意識をOFFにする";
+            document.body.style.backgroundColor = "#0a0a0a";
+            if (wakeLock) { wakeLock.release(); wakeLock = null; }
         }
+
+        // 初期表示でログを読み込む
+        renderLogs();
     </script>
 </body>
 </html>
